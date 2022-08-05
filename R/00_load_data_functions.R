@@ -11,8 +11,7 @@
 # library(pacman)
 
 pacman::p_load(tidyverse, data.table, mgcv, sf, nimble, coda, mgcViz, INLA,
-               spdep, geobr, spam, igraph, sfnetworks, lwgeom, cowplot,
-               pROC)
+               spdep, spam, igraph, sfnetworks, lwgeom, cowplot, pROC)
 sf_use_s2(F)
 
 
@@ -292,6 +291,100 @@ inla_fit <- function(df) {
                      inla.mode = "experimental")
   
   return(inla_model)
+}
+
+
+#### Function to fit Poisson INLA model with BYM2 structure ####
+# Requires neighbourhood structure (in WB format) and scaling parameter
+BYM2_nimble_fit <- function(data, nb = nb.WB, nb.scale = scale) {
+  
+  ## Set constants for NIMBLE
+  Consts <-list(N = nrow(data),    
+                L = length(nb$weights), 
+                scale = nb.scale)
+  
+  ## Enter data for model
+  nimbleData <- list(y = data$y,
+                     E = data$E,                      
+                     # elements of neighboring matrix
+                     adj = nb$adj, 
+                     weights = nb$weights, 
+                     num = nb$num)
+  
+  
+  # Write model formula
+  BYM2Code <- nimbleCode(
+    {
+      for (i in 1:N){
+        
+        y[i] ~ dpois(mu[i])    
+        
+        log(mu[i]) <- log(E[i]) + b + S[i]
+        
+        # Define BYM2 structure 
+        S[i] <- (1/sqrt(tau.b))*(sqrt((1-phi))*v[i] + sqrt(phi/scale)*u[i])
+        
+        v[i] ~ dnorm(0, tau = 1)           # IID RE   
+      } 
+      
+      # ICAR RE
+      u[1:N] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N], 
+                           tau = 1, zero_mean = 1) # its scaled so tau = 1
+      
+      # Priors
+      # Intercept
+      b ~ dnorm(0, sd = 5) 
+      
+      # prior for the precision of S
+      tau.b ~ T(dgamma(1, 0.01), 0, 100)          
+      
+      # prior for the mixing parameter
+      phi ~ T(dbeta(.5, .5), 0, 1)                 
+    }
+    
+  )
+  
+  
+  N <- nrow(data)
+  
+  ## Set intial values
+  inits <- list(b = rnorm(1), 
+                v = rnorm(N, sd = 1), 
+                u = rnorm(N, sd = 1), 
+                tau.b = runif(1), 
+                phi = .5)            
+  
+  # Specify parameters to return
+  params <- c("y", "mu", "S", "b", "u", "v", "phi", "tau.b")
+  
+  # Set up model in nimble code
+  nimbleModel <- nimbleModel(code = BYM2Code, name = 'nimbleModel', 
+                             constants = Consts, data = nimbleData, 
+                             inits = inits)
+  
+  # Tell model which parameter to estimate and return
+  MCMCconfig <- configureMCMC(nimbleModel,
+                              monitors= params,
+                              # Return WAIC to compare models
+                              enableWAIC = TRUE)
+  
+  
+  # Build the model
+  modelMCMC <- buildMCMC(MCMCconfig)
+  
+  compiled_model <- compileNimble(nimbleModel)
+  
+  compiled_model_MCMC <- compileNimble(modelMCMC, project = nimbleModel)
+  
+  results <- runMCMC(compiled_model_MCMC, thin = 10, 
+                     niter = 100000, nburnin = 50000, 
+                     nchains = 3, inits=inits, progressBar = T, 
+                     samplesAsCodaMCMC = T, WAIC = TRUE)
+  
+  
+  return(results)
+  
+  
 }
 
 
@@ -652,6 +745,25 @@ b_extract_smooth <- function(results) {
 }
 
 
+#### Function to extract intercept term from BYM2 NIMBLE model ####
+b_extract_bym2 <- function(results) {
+  
+  ## Extract simulations of the intercept
+  b_sim <- do.call(rbind, results$samples)[ , "b"]
+  
+  # Return mean and 95% credible interval & format 
+  b_est <- data.table(b_est = mean(b_sim), 
+                      b_lq = quantile(b_sim, .025),
+                      b_uq = quantile(b_sim, .975),
+                      b_format = paste0(round(mean(b_sim), 3), " (",
+                                        round(quantile(b_sim, .025), 3), 
+                                        ", ", round(quantile(b_sim, .975), 3), ")"))
+  
+  return(b_est)
+  
+}
+
+
 #### Function to extract intercept term from 3 phi models ####
 b_extract_3phi <- function(results) {
   
@@ -721,6 +833,25 @@ extract_vars_2re <- function(results) {
   return(re_vars)
   
 } 
+
+
+#### Function to extract phi parameter from BYM2 model (NIMBLE) ####
+phi_extract_bym2 <- function(results) {
+  
+  ## Extract simulations of the intercept
+  phi_sim <- do.call(rbind, results$samples)[ , "phi"]
+  
+  # Return mean and 95% credible interval & format 
+  phi_est <- data.table(phi_est = mean(phi_sim), 
+                        phi_lq = quantile(phi_sim, .025),
+                        phi_uq = quantile(phi_sim, .975),
+                        phi_format = paste0(round(mean(phi_sim), 3), " (",
+                                            round(quantile(phi_sim, .025), 3), 
+                                            ", ", round(quantile(phi_sim, .975), 3), ")"))
+  
+  return(phi_est)
+  
+}
 
 
 #### Function to extract variance of random effects from smooth model (2 spatial structure) ####
