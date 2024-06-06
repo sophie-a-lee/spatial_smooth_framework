@@ -1,6 +1,12 @@
 # spatial_smooth_framework
 
-Data and R code to support Lee S.A. et al., *(in press).* A Bayesian modelling framework to quantify multiple sources of spatial variation for disease mapping.
+Data and R code to support Lee S.A. *et al.*, 2022. A Bayesian modelling framework to quantify multiple sources of spatial variation for disease mapping. *J. R. Soc. Interface.* (https://doi.org/10.1098/rsif.2022.0440)
+
+To cite this repo:
+
+Sophie A Lee, (2022). Data and R code to accompany 'A Bayesian modelling framework to quantify multiple sources of spatial variation for disease mapping' (Version 1.0.0). *Zenodo* 
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7054457.svg)](https://doi.org/10.5281/zenodo.7054457)
 
 This work presents a novel Bayesian statistical modelling framework that allows multiple sources of spatial connectivity (for example, distance-based and human movement-based) into a spatial statistical model and quantifies the relative contribution of each term to the overall spatial structure of the model. This is achieved by applying penalised smoothing splines to coordinates that describe the relative connectivity between areas or observations to create 2-dimensional smooth surfaces describing the spatial structure of the data. Connectivity coordinates can be generated from any continuous measure of connectivity, including distance or the number of people travelling between cities. Smooth surfaces can be incorporated into Bayesian hierarchical models where their interpretation is similar to traditional random effects. 
 
